@@ -1,4 +1,4 @@
-# CSE142 Introduction: Demos
+# CS203 Introduction: Demos
 
 1. [Sort affects performance](./sort.ipynb)
 2. [Same complexity, different performance](./matrix_add.ipynb)

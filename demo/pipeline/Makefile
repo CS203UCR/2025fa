@@ -5,14 +5,15 @@ all:  arithmetics_A arithmetics_B swap flip_array linked_list linked_list.s arit
 
 EXTRA_CFLAGS = -DHAVE_LINUX_PERF_EVENT_H
 CFLAGS = -O3
+OPTS = -O0
 
-arithmetics_A: arithmetics.c 
-	$(CC) -DA -O0 $(EXTRA_CFLAGS) arithmetics.c -o arithmetics_A
-	$(CC) -DA -O0 $(EXTRA_CFLAGS) -S arithmetics.c -o A.s
+arithmetics_A: arithmetics.c perfstats.c 
+	$(CC) -DA  $(EXTRA_CFLAGS) $(OPTS) perfstats.c arithmetics.c -o arithmetics_A
+	$(CC) -DA  $(EXTRA_CFLAGS) $(OPTS) -S arithmetics.c -o A.s
 
-arithmetics_B: arithmetics.c 
-	$(CC) -DB -O0 $(EXTRA_CFLAGS) arithmetics.c -o arithmetics_B
-	$(CC) -DB -O0 $(EXTRA_CFLAGS) -S arithmetics.c -o B.s
+arithmetics_B: arithmetics.c perfstats.c 
+	$(CC) -DB  $(EXTRA_CFLAGS) $(OPTS) perfstats.c arithmetics.c -o arithmetics_B
+	$(CC) -DB  $(EXTRA_CFLAGS) $(OPTS) -S arithmetics.c -o B.s
 
 arithmetics_2_A: arithmetics_2.c 
 	$(CC) -O0 -DA $(EXTRA_CFLAGS) arithmetics_2.c -o arithmetics_2_A

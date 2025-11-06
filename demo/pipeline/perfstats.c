@@ -30,9 +30,6 @@ enum {
 //    STALLED_CYCLES_FRONTEND,
 //    STALLED_CYCLES_BACKEND,
     INSTRUCTIONS,    
-//INSTRUCTIONS_RETIRED,
-    BRANCHES,
-    BRANCH_MISSES,
 //    DTLB_ACCESSES,
 //    DTLB_MISSES,
     DL1_LOAD_ACCESSES,
@@ -49,9 +46,6 @@ static struct perf_event_attr attrs[] = {
 //    { .type = PERF_TYPE_HARDWARE, .config = PERF_COUNT_HW_STALLED_CYCLES_FRONTEND},
 //    { .type = PERF_TYPE_HARDWARE, .config = PERF_COUNT_HW_STALLED_CYCLES_BACKEND},
     { .type = PERF_TYPE_HARDWARE, .config = PERF_COUNT_HW_INSTRUCTIONS},
-    { .type = PERF_TYPE_HARDWARE, .config = PERF_COUNT_HW_BRANCH_INSTRUCTIONS},
-    { .type = PERF_TYPE_HARDWARE, .config = PERF_COUNT_HW_BRANCH_MISSES},
-
 //    { .type = PERF_TYPE_HW_CACHE, .config = PERF_COUNT_HW_CACHE_DTLB | (PERF_COUNT_HW_CACHE_OP_READ << 8) | (PERF_COUNT_HW_CACHE_RESULT_ACCESS << 16) },
 //    { .type = PERF_TYPE_HW_CACHE, .config = PERF_COUNT_HW_CACHE_DTLB | (PERF_COUNT_HW_CACHE_OP_READ << 8) | (PERF_COUNT_HW_CACHE_RESULT_MISS << 16) },
     { .type = PERF_TYPE_HW_CACHE, .config = PERF_COUNT_HW_CACHE_L1D | (PERF_COUNT_HW_CACHE_OP_READ << 8) | (PERF_COUNT_HW_CACHE_RESULT_ACCESS << 16) },
@@ -75,47 +69,6 @@ sys_perf_event_open(struct perf_event_attr *attr,
     attr->size = sizeof(*attr);
     return syscall(__NR_perf_event_open, attr, pid, cpu,
                    group_fd, flags);
-}
-unsigned long long* flush_caches() {
-        int i = 0;
-        unsigned long long* garbage = (unsigned long long*)malloc(sizeof(unsigned long long)*16777216);
-        for(i=0;i<16777216;i++)
-        {
-            garbage[i]=0;
-        } 
-        return garbage;
-/*        if( access( "/dev/cache_control", R_OK|W_OK ) != 0) {
-                fprintf(stderr, "Couldn't open '/dev/cache_control'.  Not flushing caches.\n");
-                return;
-        }
-
-        int fd = open("/dev/cache_control", O_RDWR);
-        if (fd == -1) {
-                fprintf(stderr, "Couldn't open '/dev/cache_control' to flush caches: \n");
-                return;
-        }
-
-        int r = ioctl(fd, CACHE_CONTROL_FLUSH_CACHES);
-        if (r == -1) {
-                fprintf(stderr, "Flushing caches failed: ");
-                exit(1);
-        }
- */    
-}
-void restore_cpufrequnecy() {
-    char cmdline[1024];
-    int ret;
-    sprintf(cmdline,"/usr/sbin/changefreq %d 2200000 3600000",cpu);
-    ret = system(cmdline);
-}
-void change_cpufrequnecy(int MHz) {
-    int KHz = MHz*1000;
-    int ret;
-    char cmdline[1024];
-    cpu = sched_getcpu();
-    sprintf(cmdline,"/usr/sbin/changefreq %d %d %d",cpu,KHz,KHz);
-    ret = system(cmdline);
-    return;
 }
 
 void perfstats_init(void)
@@ -143,40 +96,40 @@ void perfstats_deinit(void)
 }
 
 
-void perfstats_enable(int detail)
+void perfstats_enable(void)
 {
-    int i, err= 0, events = STAT_COUNT;
-    if(detail == 0) events = 4;
-    for (i = 0; i < events; i++) {
+    int i, ret;
+    unsigned long long *garbage = NULL;
+    for (i = 0; i < STAT_COUNT; i++) {
         if (fds[i] <= 0)
             continue;
 
         ioctl(fds[i], PERF_EVENT_IOC_ENABLE);
     }
-    for (i = 0; i < events; i++) {
+//    return garbage;
+//    garbage = flush_caches();
+    for (i = 0; i < STAT_COUNT; i++) {
         if (fds[i] > 0)
-            err += read(fds[i], &performance_counters[i], sizeof(performance_counters[i]));
+            ret = read(fds[i], &performance_counters[i], sizeof(performance_counters[i]));
     }
     gettimeofday(&time_start, NULL);
 }
-void perfstats_reenable(int detail)
+void perfstats_reenable(void)
 {
-    int i, err= 0, events = STAT_COUNT;
-    if(detail == 0) events = 4;
-    for (i = 0; i < events; i++) {
+    int i, ret;
+    for (i = 0; i < STAT_COUNT; i++) {
         if (fds[i] <= 0)
             continue;
 
-        ioctl(fds[i], PERF_EVENT_IOC_ENABLE);
+        ret = ioctl(fds[i], PERF_EVENT_IOC_ENABLE);
     }
 }
 
-void perfstats_disable(int detail)
+void perfstats_disable()
 {
-    int i, err= 0, events = STAT_COUNT;
+    int i;
     gettimeofday(&time_end, NULL);
-    if(detail == 0) events = 4;
-    for (i = 0; i < events; i++) {
+    for (i = 0; i < STAT_COUNT; i++) {
         if (fds[i] <= 0)
             continue;
 
@@ -202,11 +155,12 @@ static unsigned long long readcounter(int i)
 static unsigned long long readall()
 {
     unsigned long long ret;
-    int i,err=0;
+    int r;
+    int i;
     for (i = 0; i < STAT_COUNT; i++) {
         if (fds[i] > 0)
         {
-            err+=read(fds[i], &ret, sizeof(ret));
+            r = read(fds[i], &ret, sizeof(ret));
             performance_counters[i]=ret-performance_counters[i];
         }
     }
@@ -222,11 +176,11 @@ void perfstats_print_header(char *filename, char *header)
     fclose(fout);
 }
 
-void perfstats_print(char *preamble, char *filename, char *epilogue)
+void perfstats_print()
 {
     FILE *fout;
-    unsigned long long ic, cycles, loads=0, load_misses=0, stores=0, store_misses=0, prefetches=0, prefetch_misses=0, branches=0, branch_misses=0;
-    fout = fopen(filename, "a");
+    unsigned long long ic, cycles, loads=0, load_misses=0, stores=0, store_misses=0, prefetches=0, prefetch_misses=0;
+//    fout = fopen(filename, "a");
     readall();
     ic = performance_counters[INSTRUCTIONS];
     cycles = performance_counters[COUNTER_CPU_CYCLES];
@@ -234,12 +188,8 @@ void perfstats_print(char *preamble, char *filename, char *epilogue)
     load_misses = performance_counters[DL1_LOAD_MISSES];
     stores = performance_counters[DL1_STORE_ACCESSES];
     store_misses = performance_counters[DL1_STORE_MISSES];
-//    prefetches = performance_counters[DL1_PREFETCH_ACCESSES];
-//    prefetch_misses = performance_counters[DL1_PREFETCH_MISSES];
-    prefetches = 0;
-    prefetch_misses = 0;
-    branches = performance_counters[BRANCHES];
-    branch_misses = performance_counters[BRANCH_MISSES];
+    prefetches = performance_counters[DL1_PREFETCH_ACCESSES];
+    prefetch_misses = performance_counters[DL1_PREFETCH_MISSES];
 
 /*    ic = readcounter(INSTRUCTIONS);
     cycles = readcounter(COUNTER_CPU_CYCLES);
@@ -250,14 +200,13 @@ void perfstats_print(char *preamble, char *filename, char *epilogue)
 //    prefetches = readcounter(DL1_PREFETCH_ACCESSES);
 //    prefetch_misses = readcounter(DL1_PREFETCH_MISSES);
 
-    fprintf(fout, "%s%llu,%llu,%lf,%lf,%lf,%lf,%llu,%llu,%llu,%llu%s", 
-                     preamble, 
+    printf("%llu,%llu,%lf,%lf,%lf,%lf,%llu,%llu", 
                      ic, 
                      cycles,
                      (double)cycles/ic,
                      ((double)elapsed_time*1000000000.0)/cycles, 
-                      elapsed_time,(double)(load_misses+store_misses+prefetch_misses)/(double)(loads+stores+prefetches),load_misses+store_misses+prefetch_misses,loads+stores+prefetches,branches,branch_misses,epilogue);
-    fclose(fout);
+                      elapsed_time,(double)(load_misses+store_misses+prefetch_misses)/(double)(loads+stores+prefetches),load_misses+store_misses+prefetch_misses,loads+stores+prefetches);
+//    fclose(fout);
 }
 #ifdef __cplusplus
 }
